@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Schedule Calendar</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -496,26 +498,75 @@
     '2027-11-23': '勤労感謝の日',
   };
 
+  // =====================================================
+  //  Firebase Config
+  // =====================================================
+  const firebaseConfig = {
+    apiKey: "AIzaSyCjfAN2L7nLw3Mc4hAOryxSCUIDEsbnRSo",
+    authDomain: "schedule-calendar-b44fa.firebaseapp.com",
+    projectId: "schedule-calendar-b44fa",
+    storageBucket: "schedule-calendar-b44fa.firebasestorage.app",
+    messagingSenderId: "612074486870",
+    appId: "1:612074486870:web:04d11e60158fe39bad8ff7"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const eventsCollection = db.collection('events');
+
   // ===== Category Colors =====
   const CAT_COLORS = {
     c1: '#6ec6ff', c2: '#a78bfa', c3: '#34d399', c4: '#fbbf24', c5: '#f87171'
   };
 
   // ===== State =====
-  const STORAGE_KEY = 'schedule_cal_v2';
   let curYear, curMonth, editMode = false, editingId = null, editingDate = null;
   let selectedCatColor = '';
+  let allEvents = {}; // in-memory cache of all events
 
   const WD = ['日','月','火','水','木','金','土'];
   const MN = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
   const $ = id => document.getElementById(id);
 
-  // ===== Storage =====
-  function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } }
-  function save(d) { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); }
+  // ===== Firestore Data Layer =====
   function dk(y, m, d) { return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
-  function eventsFor(key) { return (load()[key] || []).sort((a,b) => (a.start||'').localeCompare(b.start||'')); }
+
+  function load() { return allEvents; }
+
+  function eventsFor(key) {
+    return (allEvents[key] || []).sort((a,b) => (a.start||'').localeCompare(b.start||''));
+  }
+
+  // Load all events from Firestore
+  async function loadFromFirestore() {
+    const snapshot = await eventsCollection.get();
+    allEvents = {};
+    snapshot.forEach(doc => {
+      allEvents[doc.id] = doc.data().items || [];
+    });
+    render();
+  }
+
+  // Save events for a specific date to Firestore
+  async function saveToFirestore(dateKey, items) {
+    if (items && items.length > 0) {
+      await eventsCollection.doc(dateKey).set({ items });
+    } else {
+      await eventsCollection.doc(dateKey).delete();
+    }
+  }
+
+  // Real-time listener — auto-updates when data changes
+  function startRealtimeSync() {
+    eventsCollection.onSnapshot(snapshot => {
+      allEvents = {};
+      snapshot.forEach(doc => {
+        allEvents[doc.id] = doc.data().items || [];
+      });
+      render();
+    });
+  }
 
   // ===== Render =====
   function renderWeekdays() {
@@ -787,7 +838,8 @@
     } else {
       all[editingDate].push(data);
     }
-    save(all);
+    allEvents[editingDate] = all[editingDate];
+    saveToFirestore(editingDate, all[editingDate]);
     closeEventModal();
     render();
   }
@@ -796,8 +848,13 @@
     const all = load();
     if (all[key]) {
       all[key] = all[key].filter(e => e.id !== id);
-      if (!all[key].length) delete all[key];
-      save(all);
+      if (!all[key].length) {
+        delete allEvents[key];
+        saveToFirestore(key, []);
+      } else {
+        allEvents[key] = all[key];
+        saveToFirestore(key, all[key]);
+      }
       render();
     }
   }
@@ -884,10 +941,14 @@
   curYear = now.getFullYear();
   curMonth = now.getMonth();
   renderWeekdays();
-  render();
+  render(); // initial render (empty)
+
+  // Load data from Firestore, then start real-time sync
+  loadFromFirestore().then(() => {
+    startRealtimeSync();
+  });
 
   // Admin access: show lock button only when ?edit is in the URL
-  // Usage: https://your-site.vercel.app/?edit
   const params = new URLSearchParams(window.location.search);
   if (params.has('edit')) {
     $('lockBtn').classList.add('visible');
