@@ -1147,8 +1147,9 @@
   $('dpClose').addEventListener('click', closeDayPopup);
   $('dpAddBtn').addEventListener('click', () => {
     if (currentPopupDate) {
+      const dateKey = currentPopupDate;
       closeDayPopup();
-      openEventModal(currentPopupDate, null);
+      openEventModal(dateKey, null);
     }
   });
 
