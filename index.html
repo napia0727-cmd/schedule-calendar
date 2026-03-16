@@ -759,12 +759,14 @@
     }
 
     // Click handler — open popup (view or edit mode)
+    // Uses eventsFor(key) at click time to get real-time data
     if (!other) {
       el.addEventListener('click', () => {
-        if (editMode && dayEvs.length === 0) {
+        const currentEvs = eventsFor(key);
+        if (editMode && currentEvs.length === 0) {
           // No events in edit mode → directly open add modal
           openEventModal(key, null);
-        } else if (dayEvs.length > 0 || editMode) {
+        } else if (currentEvs.length > 0 || editMode) {
           openDayPopup(key);
         }
       });
