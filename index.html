@@ -98,7 +98,7 @@
 
   /* ===== Grid ===== */
   .cal-grid {
-    display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px;
     background: var(--border-light); border: 1px solid var(--border-light);
     border-radius: var(--r);
     overflow: hidden;
@@ -107,7 +107,7 @@
   .cal-day {
     background: var(--bg-cell); padding: 6px 7px; min-height: 90px;
     cursor: default; transition: background var(--t); position: relative;
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; min-width: 0; overflow: hidden;
   }
   .cal-day:hover { background: var(--bg-hover); }
   .cal-day.other { opacity: 0.2; }
@@ -126,26 +126,117 @@
     margin-left: 4px;
   }
 
-  .day-events { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow: hidden; }
-
-  .day-event {
-    font-size: 0.6rem; color: var(--text-sec); padding: 2px 4px 2px 7px;
-    border-radius: 3px; background: rgba(255,255,255,0.04);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    text-decoration: none; display: block; transition: background var(--t);
-    line-height: 1.4; border-left: 3px solid transparent;
+  /* ===== Dot Indicators ===== */
+  .day-dots {
+    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; align-items: center;
   }
-  .day-event[data-color="c1"] { border-left-color: #6ec6ff; }
-  .day-event[data-color="c2"] { border-left-color: #a78bfa; }
-  .day-event[data-color="c3"] { border-left-color: #34d399; }
-  .day-event[data-color="c4"] { border-left-color: #fbbf24; }
-  .day-event[data-color="c5"] { border-left-color: #f87171; }
-  a.day-event:hover { background: rgba(255,255,255,0.1); color: var(--text); }
-  .day-event .ev-time { color: var(--text-dim); margin-right: 3px; }
-
-  .day-more {
-    font-size: 0.55rem; color: var(--text-dim); margin-top: 2px;
+  .day-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.35);
+    flex-shrink: 0;
   }
+  .day-dot.c1 { background: #6ec6ff; }
+  .day-dot.c2 { background: #a78bfa; }
+  .day-dot.c3 { background: #34d399; }
+  .day-dot.c4 { background: #fbbf24; }
+  .day-dot.c5 { background: #f87171; }
+  .day-dot-more {
+    font-size: 0.5rem; color: var(--text-dim); line-height: 1;
+  }
+  .cal-day.has-events { cursor: pointer; }
+
+  /* ===== Day Popup (Event Detail) ===== */
+  .day-popup-overlay {
+    position: fixed; inset: 0; background: var(--modal-bg);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    z-index: 900; opacity: 0; visibility: hidden; transition: all 0.2s ease;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .day-popup-overlay.active { opacity: 1; visibility: visible; }
+
+  .day-popup {
+    background: #1a1a1a; border: 1px solid var(--border); border-radius: var(--r);
+    width: 100%; max-width: 400px;
+    transform: translateY(12px) scale(0.97); transition: all 0.2s ease;
+    overflow: hidden;
+  }
+  .day-popup-overlay.active .day-popup { transform: translateY(0) scale(1); }
+
+  .day-popup-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .day-popup-hdr h4 {
+    font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px;
+  }
+  .day-popup-hdr h4 .popup-dow {
+    font-size: 0.7rem; font-weight: 400; color: var(--text-sec);
+  }
+  .day-popup-x {
+    width: 28px; height: 28px; border: none; border-radius: 6px;
+    background: transparent; color: var(--text-sec); font-size: 0.9rem;
+    cursor: pointer; transition: all var(--t);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .day-popup-x:hover { background: var(--bg-hover); color: var(--text); }
+
+  .day-popup-body { padding: 8px 0; max-height: 360px; overflow-y: auto; }
+
+  .day-popup-ev {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 20px; transition: background var(--t);
+  }
+  .day-popup-ev:hover { background: var(--bg-hover); }
+  .day-popup-ev-dot {
+    width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0;
+    background: rgba(255,255,255,0.25);
+  }
+  .day-popup-ev-dot.c1 { background: #6ec6ff; }
+  .day-popup-ev-dot.c2 { background: #a78bfa; }
+  .day-popup-ev-dot.c3 { background: #34d399; }
+  .day-popup-ev-dot.c4 { background: #fbbf24; }
+  .day-popup-ev-dot.c5 { background: #f87171; }
+  .day-popup-ev-info { flex: 1; min-width: 0; }
+  .day-popup-ev-title {
+    font-size: 0.85rem; font-weight: 500; color: var(--text);
+    word-break: break-word;
+  }
+  .day-popup-ev-title a {
+    color: var(--text); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .day-popup-ev-title a:hover { text-decoration: underline; }
+  .day-popup-ev-title .link-icon { font-size: 0.6rem; color: var(--text-dim); }
+  .day-popup-ev-meta {
+    font-size: 0.7rem; color: var(--text-dim); margin-top: 2px;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .day-popup-ev-cat {
+    font-size: 0.6rem; color: var(--text-dim); background: rgba(255,255,255,0.05);
+    padding: 1px 8px; border-radius: 8px;
+  }
+  .day-popup-ev-memo {
+    font-size: 0.68rem; color: var(--text-dim); margin-top: 3px;
+    word-break: break-word;
+  }
+
+  .day-popup-empty {
+    text-align: center; padding: 20px; color: var(--text-dim); font-size: 0.8rem;
+  }
+
+  .day-popup-footer {
+    padding: 12px 20px; border-top: 1px solid var(--border-light);
+    display: none;
+  }
+  .day-popup-footer.show { display: flex; }
+  .day-popup-add-btn {
+    width: 100%; padding: 9px; border-radius: var(--r-sm);
+    border: 1px solid var(--border); background: transparent;
+    color: var(--text-sec); font-family: inherit; font-size: 0.78rem;
+    cursor: pointer; transition: all var(--t);
+  }
+  .day-popup-add-btn:hover { background: var(--bg-hover); color: var(--text); border-color: rgba(255,255,255,0.2); }
 
   /* ===== Schedule List ===== */
   .schedule-list {
@@ -330,8 +421,8 @@
     .cal-day { min-height: 64px; padding: 4px 4px; }
     .day-num { font-size: 0.7rem; }
     .day-num .holiday-name { display: none; }
-    .day-event { font-size: 0.5rem; padding: 1px 3px; }
-    .day-event .ev-time { display: none; }
+    .day-dots { gap: 3px; }
+    .day-dot { width: 6px; height: 6px; }
     .sched-table td { padding: 10px 12px; }
     .cal-legend { gap: 10px; font-size: 0.6rem; }
   }
@@ -339,9 +430,10 @@
   @media (max-width: 480px) {
     .cal-day { min-height: 52px; padding: 3px; }
     .day-num { font-size: 0.65rem; }
-    .day-events { gap: 1px; }
-    .day-event { font-size: 0.45rem; padding: 1px 2px; }
+    .day-dots { gap: 2px; margin-top: 2px; }
+    .day-dot { width: 5px; height: 5px; }
     .today-btn { display: none !important; }
+    .day-popup { max-width: 100%; }
   }
 </style>
 </head>
@@ -460,6 +552,20 @@
         </div>
         <div class="pw-error" id="pwError">パスワードが正しくありません</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Day Popup (Event Detail) -->
+<div class="day-popup-overlay" id="dayPopup">
+  <div class="day-popup">
+    <div class="day-popup-hdr">
+      <h4 id="dpTitle"></h4>
+      <button class="day-popup-x" id="dpClose">✕</button>
+    </div>
+    <div class="day-popup-body" id="dpBody"></div>
+    <div class="day-popup-footer" id="dpFooter">
+      <button class="day-popup-add-btn" id="dpAddBtn">＋ 予定を追加</button>
     </div>
   </div>
 </div>
@@ -622,7 +728,6 @@
     if (isSat) cls += ' sat';
     if (isSun) cls += ' sun';
     if (isHol) cls += ' holiday';
-    if (editMode && !other) cls += ' editable';
     el.className = cls;
     el.dataset.date = key;
 
@@ -632,41 +737,150 @@
     numHtml += '</div>';
     el.innerHTML = numHtml;
 
-    // Events
+    // Dot indicators (instead of text)
     const dayEvs = (events[key] || []).sort((a,b) => (a.start||'').localeCompare(b.start||''));
-    if (dayEvs.length > 0) {
+    if (dayEvs.length > 0 && !other) {
+      el.classList.add('has-events');
       const wrap = document.createElement('div');
-      wrap.className = 'day-events';
+      wrap.className = 'day-dots';
       const show = Math.min(dayEvs.length, 3);
       for (let i = 0; i < show; i++) {
-        const ev = dayEvs[i];
-        const tag = ev.url ? 'a' : 'span';
-        const evEl = document.createElement(tag);
-        evEl.className = 'day-event';
-        if (ev.catColor) evEl.dataset.color = ev.catColor;
-        if (ev.url) { evEl.href = ev.url; evEl.target = '_blank'; evEl.rel = 'noopener'; }
-        let inner = '';
-        if (ev.start) inner += `<span class="ev-time">${ev.start}</span>`;
-        inner += esc(ev.title);
-        evEl.innerHTML = inner;
-        if (ev.url) evEl.addEventListener('click', e => e.stopPropagation());
-        wrap.appendChild(evEl);
+        const dot = document.createElement('span');
+        dot.className = 'day-dot' + (dayEvs[i].catColor ? ' ' + dayEvs[i].catColor : '');
+        wrap.appendChild(dot);
       }
       if (dayEvs.length > 3) {
-        const more = document.createElement('div');
-        more.className = 'day-more';
+        const more = document.createElement('span');
+        more.className = 'day-dot-more';
         more.textContent = `+${dayEvs.length - 3}`;
         wrap.appendChild(more);
       }
       el.appendChild(wrap);
     }
 
-    // Click handler for edit mode
-    if (editMode && !other) {
-      el.addEventListener('click', () => openEventModal(key, null));
+    // Click handler — open popup (view or edit mode)
+    if (!other) {
+      el.addEventListener('click', () => {
+        if (editMode && dayEvs.length === 0) {
+          // No events in edit mode → directly open add modal
+          openEventModal(key, null);
+        } else if (dayEvs.length > 0 || editMode) {
+          openDayPopup(key);
+        }
+      });
     }
 
     grid.appendChild(el);
+  }
+
+  // ===== Day Popup =====
+  let currentPopupDate = null;
+
+  function openDayPopup(dateKey) {
+    currentPopupDate = dateKey;
+    const parts = dateKey.split('-');
+    const y = parseInt(parts[0]), m = parseInt(parts[1]) - 1, d = parseInt(parts[2]);
+    const dow = new Date(y, m, d).getDay();
+    const hol = HOLIDAYS[dateKey];
+
+    // Header
+    let titleHtml = `${m + 1}月${d}日 <span class="popup-dow">${WD[dow]}</span>`;
+    if (hol) titleHtml += ` <span class="popup-dow">${hol}</span>`;
+    $('dpTitle').innerHTML = titleHtml;
+
+    // Body
+    const body = $('dpBody');
+    body.innerHTML = '';
+    const dayEvs = eventsFor(dateKey);
+
+    if (dayEvs.length === 0) {
+      body.innerHTML = '<div class="day-popup-empty">この日の予定はありません</div>';
+    } else {
+      dayEvs.forEach(ev => {
+        const row = document.createElement('div');
+        row.className = 'day-popup-ev';
+
+        // Dot
+        const dot = document.createElement('span');
+        dot.className = 'day-popup-ev-dot' + (ev.catColor ? ' ' + ev.catColor : '');
+        row.appendChild(dot);
+
+        // Info
+        const info = document.createElement('div');
+        info.className = 'day-popup-ev-info';
+
+        // Title
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'day-popup-ev-title';
+        if (ev.url) {
+          titleDiv.innerHTML = `<a href="${esc(ev.url)}" target="_blank" rel="noopener">${esc(ev.title)}<span class="link-icon">🔗</span></a>`;
+        } else {
+          titleDiv.textContent = ev.title;
+        }
+        info.appendChild(titleDiv);
+
+        // Meta (time + category)
+        const metaParts = [];
+        if (ev.start) {
+          let timeStr = ev.start;
+          if (ev.end) timeStr += `–${ev.end}`;
+          metaParts.push(timeStr);
+        }
+        if (metaParts.length > 0 || ev.catName) {
+          const meta = document.createElement('div');
+          meta.className = 'day-popup-ev-meta';
+          if (metaParts.length > 0) {
+            const timeSpan = document.createElement('span');
+            timeSpan.textContent = metaParts.join(' ');
+            meta.appendChild(timeSpan);
+          }
+          if (ev.catName) {
+            const catSpan = document.createElement('span');
+            catSpan.className = 'day-popup-ev-cat';
+            catSpan.textContent = ev.catName;
+            meta.appendChild(catSpan);
+          }
+          info.appendChild(meta);
+        }
+
+        // Memo
+        if (ev.memo) {
+          const memo = document.createElement('div');
+          memo.className = 'day-popup-ev-memo';
+          memo.textContent = ev.memo;
+          info.appendChild(memo);
+        }
+
+        row.appendChild(info);
+
+        // Edit button in edit mode
+        if (editMode) {
+          row.style.cursor = 'pointer';
+          row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeDayPopup();
+            openEventModal(dateKey, ev.id);
+          });
+        }
+
+        body.appendChild(row);
+      });
+    }
+
+    // Footer (add button in edit mode)
+    const footer = $('dpFooter');
+    if (editMode) {
+      footer.classList.add('show');
+    } else {
+      footer.classList.remove('show');
+    }
+
+    $('dayPopup').classList.add('active');
+  }
+
+  function closeDayPopup() {
+    $('dayPopup').classList.remove('active');
+    currentPopupDate = null;
   }
 
   // ===== Schedule List =====
@@ -929,11 +1143,19 @@
 
   $('eventModal').addEventListener('click', e => { if (e.target === $('eventModal')) closeEventModal(); });
   $('pwModal').addEventListener('click', e => { if (e.target === $('pwModal')) closePwModal(); });
+  $('dayPopup').addEventListener('click', e => { if (e.target === $('dayPopup')) closeDayPopup(); });
+  $('dpClose').addEventListener('click', closeDayPopup);
+  $('dpAddBtn').addEventListener('click', () => {
+    if (currentPopupDate) {
+      closeDayPopup();
+      openEventModal(currentPopupDate, null);
+    }
+  });
 
   $('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') submitPw(); });
 
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeEventModal(); closePwModal(); }
+    if (e.key === 'Escape') { closeDayPopup(); closeEventModal(); closePwModal(); }
   });
 
   // ===== Init =====
