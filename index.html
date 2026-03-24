@@ -225,6 +225,18 @@
     text-align: center; padding: 20px; color: var(--text-dim); font-size: 0.8rem;
   }
 
+  /* ===== Duplicate Button in Popup ===== */
+  .day-popup-ev-actions {
+    display: flex; gap: 4px; align-items: flex-start; margin-top: 1px; flex-shrink: 0;
+  }
+  .day-popup-dup-btn {
+    background: none; border: 1px solid var(--border); color: var(--text-dim);
+    width: 26px; height: 26px; border-radius: 4px; cursor: pointer;
+    font-size: 0.7rem; display: flex; align-items: center; justify-content: center;
+    transition: all var(--t); flex-shrink: 0;
+  }
+  .day-popup-dup-btn:hover { background: var(--bg-hover); color: var(--text); border-color: rgba(255,255,255,0.2); }
+
   .day-popup-footer {
     padding: 12px 20px; border-top: 1px solid var(--border-light);
     display: none;
@@ -496,6 +508,16 @@
         <label for="evTitle">タイトル</label>
         <input type="text" id="evTitle" placeholder="予定のタイトル" autocomplete="off">
       </div>
+      <div class="form-row" id="dateRangeRow">
+        <div class="fg">
+          <label for="evDateFrom">開始日</label>
+          <input type="date" id="evDateFrom">
+        </div>
+        <div class="fg">
+          <label for="evDateTo">終了日（連日の場合）</label>
+          <input type="date" id="evDateTo">
+        </div>
+      </div>
       <div class="fg">
         <label for="evUrl">URL（任意）</label>
         <input type="url" id="evUrl" placeholder="https://..." autocomplete="off">
@@ -516,11 +538,11 @@
       </div>
       <div class="form-row">
         <div class="fg">
-          <label for="evStart">開始</label>
+          <label for="evStart">開始時間</label>
           <input type="time" id="evStart">
         </div>
         <div class="fg">
-          <label for="evEnd">終了</label>
+          <label for="evEnd">終了時間</label>
           <input type="time" id="evEnd">
         </div>
       </div>
@@ -638,6 +660,13 @@
   // ===== Firestore Data Layer =====
   function dk(y, m, d) { return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
 
+  // iframe auto-resize helper (defined in outer scope, called after render)
+  function notifyParentHeight() {
+    if (typeof window.notifyParentHeight === 'function') {
+      setTimeout(window.notifyParentHeight, 50);
+    }
+  }
+
   function load() { return allEvents; }
 
   function eventsFor(key) {
@@ -711,6 +740,7 @@
     }
 
     renderScheduleList(events);
+    notifyParentHeight();
   }
 
   function mkDay(grid, y, m, d, other, todayKey, events) {
@@ -855,10 +885,27 @@
 
         row.appendChild(info);
 
-        // Edit button in edit mode
+        // Edit & duplicate buttons in edit mode
         if (editMode) {
+          const actions = document.createElement('div');
+          actions.className = 'day-popup-ev-actions';
+
+          // Duplicate button
+          const dupBtn = document.createElement('button');
+          dupBtn.className = 'day-popup-dup-btn';
+          dupBtn.title = '複製';
+          dupBtn.textContent = '📋';
+          dupBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeDayPopup();
+            openEventModal(dateKey, null, ev); // pass ev as duplicate source
+          });
+          actions.appendChild(dupBtn);
+          row.appendChild(actions);
+
           row.style.cursor = 'pointer';
           row.addEventListener('click', (e) => {
+            if (e.target.closest('.day-popup-ev-actions')) return;
             e.stopPropagation();
             closeDayPopup();
             openEventModal(dateKey, ev.id);
@@ -886,12 +933,15 @@
   }
 
   // ===== Schedule List =====
+  function evSignature(ev) {
+    return [ev.title, ev.start, ev.end, ev.url, ev.catColor, ev.catName, ev.memo].join('|');
+  }
+
   function renderScheduleList(events) {
     $('schedListTitle').textContent = `${MN[curMonth]}のスケジュール`;
     const dim = new Date(curYear, curMonth + 1, 0).getDate();
     const body = $('schedListBody');
     body.innerHTML = '';
-    let count = 0;
 
     const rows = [];
     for (let d = 1; d <= dim; d++) {
@@ -901,62 +951,106 @@
       const hol = HOLIDAYS[key];
       dayEvs.forEach(ev => {
         rows.push({ key, d, dow, hol, ev });
-        count++;
       });
     }
 
-    $('schedCount').textContent = count > 0 ? `${count}件` : 'なし';
+    // Group consecutive-day events with identical content
+    const grouped = [];
+    let i = 0;
+    while (i < rows.length) {
+      const cur = rows[i];
+      const sig = evSignature(cur.ev);
+      let endRow = cur;
+      let j = i + 1;
+      while (j < rows.length) {
+        const next = rows[j];
+        if (evSignature(next.ev) === sig && next.d === endRow.d + 1) {
+          endRow = next;
+          j++;
+        } else {
+          break;
+        }
+      }
+      if (endRow !== cur) {
+        grouped.push({
+          type: 'range',
+          startRow: cur,
+          endRow: endRow,
+          keys: rows.slice(i, j).map(r => ({ key: r.key, id: r.ev.id })),
+          ev: cur.ev
+        });
+        i = j;
+      } else {
+        grouped.push({ type: 'single', row: cur });
+        i++;
+      }
+    }
 
-    if (count === 0) {
+    $('schedCount').textContent = grouped.length > 0 ? `${grouped.length}件` : 'なし';
+
+    if (grouped.length === 0) {
       body.innerHTML = '<div class="empty-list">この月の予定はありません</div>';
       return;
     }
 
     const table = document.createElement('table');
     table.className = 'sched-table';
-    rows.forEach(r => {
-      const tr = document.createElement('tr');
 
-      // Date cell
+    grouped.forEach(g => {
+      const tr = document.createElement('tr');
+      const ev = g.type === 'single' ? g.row.ev : g.ev;
+      const r = g.type === 'single' ? g.row : g.startRow;
+
       let dateCls = 'sched-date';
       if (r.dow === 0 || r.hol) dateCls += ' is-sun';
       else if (r.dow === 6) dateCls += ' is-sat';
 
-      let dateStr = `${curMonth + 1}/${r.d}（${WD[r.dow]}）`;
-      if (r.hol) dateStr += ` ${r.hol}`;
-
-      // Time cell
-      let timeStr = '';
-      if (r.ev.start) {
-        timeStr = r.ev.start;
-        if (r.ev.end) timeStr += `–${r.ev.end}`;
+      let dateStr;
+      if (g.type === 'range') {
+        const s = g.startRow, e = g.endRow;
+        dateStr = `${curMonth + 1}/${s.d}（${WD[s.dow]}）〜 ${curMonth + 1}/${e.d}（${WD[e.dow]}）`;
+      } else {
+        dateStr = `${curMonth + 1}/${r.d}（${WD[r.dow]}）`;
+        if (r.hol) dateStr += ` ${r.hol}`;
       }
 
-      // Content cell
-      const isLink = !!r.ev.url;
+      let timeStr = '';
+      if (ev.start) {
+        timeStr = ev.start;
+        if (ev.end) timeStr += `–${ev.end}`;
+      }
+
+      const isLink = !!ev.url;
       const titleTag = isLink ? 'a' : 'span';
-      const titleAttr = isLink ? ` href="${esc(r.ev.url)}" target="_blank" rel="noopener"` : '';
+      const titleAttr = isLink ? ` href="${esc(ev.url)}" target="_blank" rel="noopener"` : '';
       const linkIcon = isLink ? '<span class="link-icon">🔗</span>' : '';
 
       let actionsHtml = '';
       if (editMode) {
-        actionsHtml = `
-          <td class="sched-actions">
-            <button class="sched-edit-btn" data-key="${r.key}" data-id="${r.ev.id}">✏️</button>
-            <button class="sched-del-btn" data-key="${r.key}" data-id="${r.ev.id}">🗑</button>
-          </td>`;
+        if (g.type === 'single') {
+          actionsHtml = `
+            <td class="sched-actions">
+              <button class="sched-edit-btn" data-key="${r.key}" data-id="${ev.id}">✏️</button>
+              <button class="sched-del-btn" data-key="${r.key}" data-id="${ev.id}">🗑</button>
+            </td>`;
+        } else {
+          actionsHtml = `
+            <td class="sched-actions">
+              <button class="sched-del-range-btn" data-keys='${JSON.stringify(g.keys)}'>🗑</button>
+            </td>`;
+        }
       }
 
-      const catDot = r.ev.catColor ? `<span class="sched-cat-dot ${r.ev.catColor}"></span>` : '';
-      const catBadge = r.ev.catName ? `<span class="sched-cat-badge">${esc(r.ev.catName)}</span>` : '';
+      const catDot = ev.catColor ? `<span class="sched-cat-dot ${ev.catColor}"></span>` : '';
+      const catBadge = ev.catName ? `<span class="sched-cat-badge">${esc(ev.catName)}</span>` : '';
 
       tr.innerHTML = `
         <td class="sched-cat-cell">${catDot}</td>
         <td class="${dateCls}">${dateStr}</td>
         <td class="sched-time">${timeStr}</td>
         <td class="sched-content">
-          <${titleTag} class="sched-title"${titleAttr}>${esc(r.ev.title)}${linkIcon}${catBadge}</${titleTag}>
-          ${r.ev.memo ? `<div class="sched-memo">${esc(r.ev.memo)}</div>` : ''}
+          <${titleTag} class="sched-title"${titleAttr}>${esc(ev.title)}${linkIcon}${catBadge}</${titleTag}>
+          ${ev.memo ? `<div class="sched-memo">${esc(ev.memo)}</div>` : ''}
         </td>
         ${actionsHtml}`;
 
@@ -965,7 +1059,6 @@
 
     body.appendChild(table);
 
-    // Bind edit/delete buttons
     if (editMode) {
       body.querySelectorAll('.sched-edit-btn').forEach(btn => {
         btn.addEventListener('click', () => openEventModal(btn.dataset.key, btn.dataset.id));
@@ -973,13 +1066,19 @@
       body.querySelectorAll('.sched-del-btn').forEach(btn => {
         btn.addEventListener('click', () => { deleteEvent(btn.dataset.key, btn.dataset.id); });
       });
+      body.querySelectorAll('.sched-del-range-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const keys = JSON.parse(btn.dataset.keys);
+          keys.forEach(k => deleteEvent(k.key, k.id));
+        });
+      });
     }
   }
 
   function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
   // ===== Event Modal =====
-  function openEventModal(dateKey, evId) {
+  function openEventModal(dateKey, evId, dupSource) {
     if (!editMode) return;
     editingDate = dateKey;
     editingId = evId || null;
@@ -990,14 +1089,21 @@
     $('evEnd').value = '';
     $('evMemo').value = '';
     $('evCatName').value = '';
+    $('evDateFrom').value = dateKey;
+    $('evDateTo').value = '';
     selectCatColor('');
 
     // Remove existing delete button
     const oldDel = $('emActs').querySelector('.btn-d');
     if (oldDel) oldDel.remove();
 
+    // Show/hide date range row
+    const dateRow = $('dateRangeRow');
+
     if (editingId) {
+      // Editing existing event — hide date range (single day only)
       $('emTitle').textContent = '予定を編集';
+      dateRow.style.display = 'none';
       const ev = eventsFor(dateKey).find(e => e.id === editingId);
       if (ev) {
         $('evTitle').value = ev.title || '';
@@ -1013,8 +1119,21 @@
       del.textContent = '削除';
       del.addEventListener('click', () => { deleteEvent(dateKey, editingId); closeEventModal(); });
       $('emActs').insertBefore(del, $('emActs').firstChild);
+    } else if (dupSource) {
+      // Duplicating — show date range, pre-fill from source
+      $('emTitle').textContent = '予定を複製';
+      dateRow.style.display = 'flex';
+      $('evTitle').value = dupSource.title || '';
+      $('evUrl').value = dupSource.url || '';
+      $('evStart').value = dupSource.start || '';
+      $('evEnd').value = dupSource.end || '';
+      $('evMemo').value = dupSource.memo || '';
+      $('evCatName').value = dupSource.catName || '';
+      selectCatColor(dupSource.catColor || '');
     } else {
+      // New event — show date range
       $('emTitle').textContent = '予定を追加';
+      dateRow.style.display = 'flex';
     }
 
     $('eventModal').classList.add('active');
@@ -1026,6 +1145,21 @@
     editingId = null; editingDate = null;
   }
 
+  // Generate date keys from startDate to endDate
+  function getDateRange(startDateStr, endDateStr) {
+    const dates = [];
+    const start = new Date(startDateStr + 'T00:00:00');
+    const end = endDateStr ? new Date(endDateStr + 'T00:00:00') : start;
+    if (isNaN(start.getTime())) return dates;
+    if (isNaN(end.getTime()) || end < start) return [startDateStr];
+    const cur = new Date(start);
+    while (cur <= end) {
+      dates.push(dk(cur.getFullYear(), cur.getMonth(), cur.getDate()));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return dates;
+  }
+
   function saveEvent() {
     const title = $('evTitle').value.trim();
     if (!title) {
@@ -1034,11 +1168,8 @@
       setTimeout(() => $('evTitle').style.borderColor = '', 1500);
       return;
     }
-    const all = load();
-    if (!all[editingDate]) all[editingDate] = [];
 
-    const data = {
-      id: editingId || Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    const evData = {
       title,
       url: $('evUrl').value.trim(),
       start: $('evStart').value,
@@ -1049,13 +1180,34 @@
     };
 
     if (editingId) {
-      const idx = all[editingDate].findIndex(e => e.id === editingId);
-      if (idx !== -1) all[editingDate][idx] = data;
+      // Editing existing single event
+      const all = load();
+      const data = { ...evData, id: editingId };
+      if (all[editingDate]) {
+        const idx = all[editingDate].findIndex(e => e.id === editingId);
+        if (idx !== -1) all[editingDate][idx] = data;
+      }
+      allEvents[editingDate] = all[editingDate];
+      saveToFirestore(editingDate, all[editingDate]);
     } else {
-      all[editingDate].push(data);
+      // New event or duplicate — support date range
+      const fromDate = $('evDateFrom').value || editingDate;
+      const toDate = $('evDateTo').value;
+      const dateKeys = getDateRange(fromDate, toDate);
+      const all = load();
+
+      dateKeys.forEach(key => {
+        const data = {
+          ...evData,
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2,7)
+        };
+        if (!all[key]) all[key] = [];
+        all[key].push(data);
+        allEvents[key] = all[key];
+        saveToFirestore(key, all[key]);
+      });
     }
-    allEvents[editingDate] = all[editingDate];
-    saveToFirestore(editingDate, all[editingDate]);
+
     closeEventModal();
     render();
   }
@@ -1177,6 +1329,30 @@
   const params = new URLSearchParams(window.location.search);
   if (params.has('edit')) {
     $('lockBtn').classList.add('visible');
+  }
+})();
+
+// ===== iframe Auto-Resize (postMessage) =====
+(function() {
+  'use strict';
+  // Send height to parent window for iframe auto-resize
+  function sendHeight() {
+    const height = document.documentElement.scrollHeight;
+    window.parent.postMessage({ type: 'calendar-resize', height: height }, '*');
+  }
+  // Expose globally so the main IIFE can call it
+  window.notifyParentHeight = sendHeight;
+
+  // Send height on load, resize, and DOM changes
+  window.addEventListener('load', sendHeight);
+  window.addEventListener('resize', sendHeight);
+
+  // Observe DOM mutations (modal open/close, content changes)
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(sendHeight).observe(document.body);
+  } else {
+    // Fallback: poll every 500ms
+    setInterval(sendHeight, 500);
   }
 })();
 </script>
